@@ -2,12 +2,14 @@ import { LLMTask, LLMMetadata, TriageResult, SceneAnalysisResult, VoiceDispatchR
 import { GroqLlamaAdapter } from "./adapters/groq-llama";
 import { GeminiAdapter } from "./adapters/gemini";
 import { OpenAIAdapter } from "./adapters/openai";
+import { AnthropicAdapter } from "./adapters/anthropic";
 import { MockNeuralCore } from "./adapters/mock-engine";
 
 export class CentralizedLLMService {
   private groq = new GroqLlamaAdapter();
   private gemini = new GeminiAdapter();
   private openai = new OpenAIAdapter();
+  private anthropic = new AnthropicAdapter();
 
   /**
    * Triage an emergency using Meta Llama 3.1 70B Neural Core
@@ -128,6 +130,28 @@ export class CentralizedLLMService {
   ): Promise<{ data: CommandSheetStrategy; meta: LLMMetadata }> {
     const startTime = Date.now();
 
+    // Primary: Anthropic Claude 3.5 Sonnet — superior multi-agency reasoning
+    if (this.anthropic.isAvailable()) {
+      try {
+        const { result, tokens } = await this.anthropic.generateCommandStrategy(title, location, description);
+        const latencyMs = Date.now() - startTime;
+        return {
+          data: result,
+          meta: {
+            provider: "anthropic",
+            model: "claude-3-5-sonnet-20241022",
+            latencyMs,
+            tokensUsed: tokens,
+            costEstimatedUsd: (tokens.total / 1000000) * 3.0,
+            timestamp: new Date().toISOString(),
+          },
+        };
+      } catch (err) {
+        console.warn("Anthropic command strategy failed, falling back to OpenAI:", err);
+      }
+    }
+
+    // Secondary: OpenAI GPT-4o-mini
     if (this.openai.isAvailable()) {
       try {
         const { result, tokens } = await this.openai.generateCommandStrategy(title, location, description);
